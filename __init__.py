@@ -1,5 +1,3 @@
-# http://remotescripts.blogspot.com
-
 from .AAPIStub import AAPIStub
 
 def create_instance(c_instance):
