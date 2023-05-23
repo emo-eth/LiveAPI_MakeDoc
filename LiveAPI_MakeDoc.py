@@ -29,245 +29,175 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import Live
 import os, sys, types
-from _Support import inspect
 from _Framework.ControlSurface import ControlSurface
+import json
+import inspect
+import pprint
+import logging
+import os
+from typing import Optional, List
+
+class Argument:
+    name: str
+    type: str
+    default: Optional[str]
+
+    def __init__(self, name: str, type: str, default: Optional[str] = None):
+        self.name = name
+        self.type = type
+        self.default = default
+
+    def __str__(self):
+        if self.default is None:
+            return f'{self.name}: {self.type}'
+        else:
+            return f'{self.name}: {self.type} = {self.default}'
+
+class FunctionSignature:
+    name: str
+    arguments: List[Argument]
+    return_type: str
+
+    def __init__(self, name: str, arguments: List[Argument], return_type: str):
+        self.name = name
+        self.arguments = arguments
+        self.return_type = return_type
+
+    def __str__(self):
+        return f'{self.name}({", ".join(str(x) for x in self.arguments)}) -> {self.return_type}'
+
+def parse_arg(arg: str) -> Argument:
+    '''Parses args in type)name format'''
+    dirty_type, name = arg.split(')')
+    typename = dirty_type[1:]
+    return Argument(name, typename)
+
+
+def parse_docstring(name:str, docstring: str):
+    '''Get the signature and return type from a docstring'''
+    try:
+        # get first line of docstring, and then remove ' :' from the end
+        signature = docstring.split('\n')[0][:-2]
+        # split into name with args and return type
+        name_with_args, return_type = (x.strip() for x in signature.split('->'))
+        # split function_name( (type)name, ...) and just get '(type)name, ...'
+        args_string = name_with_args.split('( ')[1][:-1]   
+        # get individual non-optional args
+        args = [parse_arg(x) for x in args_string.split(', ')]
+        return str(FunctionSignature(name, args, return_type))
+    except Exception as e:
+        logger.exception('Failed to parse docstring for %s', name)
+        return '<no signature available>'
+
+
+# Create logger
+logger = logging.getLogger('introspection')
+logger.setLevel(logging.DEBUG)
+
+# Create file handler
+home_dir = os.path.expanduser("~")
+fh = logging.FileHandler(os.path.join(home_dir, 'logs.txt'))
+fh.setLevel(logging.DEBUG)
+
+# Create formatter and add it to the handler
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+
+# Add handler to the logger
+logger.addHandler(fh)
+
+def introspect_module(module):
+    logger.debug('Introspecting module: %s', module.__name__)
+    try:
+        module_info = {
+            'name': module.__name__,
+            'doc': inspect.getdoc(module),
+            'members': {},
+            
+        }
+
+        for name, obj in ((name, obj) for name, obj in inspect.getmembers(module) if not name.startswith('__')):
+            if inspect.ismodule(obj):
+                module_info['members'][name] = introspect_module(obj)
+            elif inspect.isclass(obj):
+                module_info['members'][name] = introspect_class(obj)
+            elif inspect.isfunction(obj) or inspect.isbuiltin(obj):
+                module_info['members'][name] = introspect_function(obj)
+            else:
+                module_info['members'][name] = str(obj)
+        return module_info
+    except Exception as e:
+        logger.exception('Failed to introspect module: %s', module.__name__)
+        raise e
+
+def get_function_signature(func):
+    try:
+        return str(inspect.signature(func))
+    except ValueError:
+        return '<no signature available>'
+
+def get_text_signature(func):
+    try:
+        return func.__text_signature__
+    except:
+        return '<no signature available>'
+
+def introspect_function(func):
+    logger.debug('Introspecting function: %s', func.__name__)
+    try:
+        return {
+            'name': func.__name__,
+            'doc': inspect.getdoc(func),
+            'signature': get_function_signature(func),
+            'text_signature': get_text_signature(func),
+            'manual_signature': parse_docstring(func.__name__, inspect.getdoc(func) or ''),
+            
+        }
+    except Exception as e:
+        logger.exception('Failed to introspect function: %s', func.__name__)
+        raise
+
+def introspect_class(cls):
+    logger.debug('Introspecting class: %s', cls.__name__)
+    try:
+        methods = {name: introspect_function(method) 
+                    for name, method in cls.__dict__.items() 
+                    if inspect.isroutine(method)}
+        return {
+            'name': cls.__name__,
+            'doc': inspect.getdoc(cls),
+            'methods': {name: introspect_function(method) for name, method in inspect.getmembers(cls, inspect.isroutine) if not name.startswith('__')},
+        }
+    except Exception as e:
+        logger.exception('Failed to introspect class: %s', cls.__name__)
+        raise e
+
+
 
 class APIMakeDoc(ControlSurface):
 
     def __init__(self, c_instance):
         ControlSurface.__init__(self, c_instance) 
         module = Live
-        outfilename = (str(module.__name__) + ".xml")
+        
+        outfilename = (str(module.__name__) + ".json")
         outfilename = (os.path.join(os.path.expanduser('~'), outfilename))
-        cssfilename = "Live.css"
-        cssfilename = (os.path.join(os.path.expanduser('~'), cssfilename))
-        make_doc(module, outfilename, cssfilename)
+        # make_doc(module, outfilename)
+        with open(outfilename, 'w') as f:
+            f.write(json.dumps(introspect_module(module),indent=2))
 
 
     def disconnect(self):
         ControlSurface.disconnect(self)
 
 
-def make_doc(module, outfilename, cssfilename):
-    if outfilename != None:
-        stdout_old = sys.stdout
+# def make_doc(module, outfilename):
+#     if outfilename != None:
+#         stdout_old = sys.stdout
 
-        outputfile = open(cssfilename, 'w')
-        sys.stdout = outputfile
-        print(css)
-        outputfile.close()
-
-        outputfile = open(outfilename, 'w')
-        sys.stdout = outputfile
-
-        print ('<?xml-stylesheet type="text/css" href="Live.css"?>') # set stylesheet to Live.css
-        print ('<Live>')
-        app = Live.Application.get_application() # get a handle to the App
-        maj = app.get_major_version() # get the major version from the App
-        min = app.get_minor_version() # get the minor version from the App
-        bug = app.get_bugfix_version() # get the bugfix version from the App            
-        print ('Live API version ' + str(maj) + "." + str(min) + "." + str(bug)) # main title
-        print('<Doc>\t%s</Doc>\n' % header)
-        print('<Doc>\t%s</Doc>\n' % disclaimer)
-
-        describe_module(module)
-
-        print ("</Live>")
-        outputfile.close()
-        sys.stdout = stdout_old
+#         outputfile = open(outfilename, 'w')
+#         sys.stdout = outputfile
+#         print(generate_stub(module, 'Live'))
+#         outputfile.close()
+#         sys.stdout = stdout_old
             
-            
-def get_doc(obj):
-    """ Get object's doc string and remove \n's and clean up <'s and >'s for XML compatibility"""
-
-    doc = False
-    if obj.__doc__ != None:
-        doc = (obj.__doc__).replace("\n", "") #remove newlines from Live API docstings, for wrapped display
-        doc = doc.replace("   ", "") #Strip chunks of whitespace from docstrings, for wrapped display
-        doc = doc.replace("<", "&lt;") #replace XML reserved characters 
-        doc = doc.replace(">", "&gt;")
-        doc = doc.replace("&", "&amp;")
-    return doc
-
-
-def print_obj_info(description, obj, name = None):
-    """ Print object's descriptor and name on one line, and docstring (if any) on the next """
-    
-    if hasattr(obj, '__name__'):
-        name_str = obj.__name__
-    else:
-        name_str = name        
-
-    if len(LINE) != 0:
-        LINE.append("." + name_str)
-        if inspect.ismethod(obj) or inspect.isbuiltin(obj): 
-            LINE[-1] += "()"
-    else:
-        LINE.append(name_str)
-    line_str = ""
-    for item in LINE:
-        line_str += item
-    print ('<%s>%s<Description>%s</Description></%s>\n' % (description, line_str, description, description))
-
-    if hasattr(obj, '__doc__'):
-        if obj.__doc__ != None:
-            print('<Doc>\t%s</Doc>\n' % get_doc(obj))
-
-
-def describe_obj(descr, obj):
-    """ Describe object passed as argument, and identify as Class, Method, Property, Value, or Built-In """
-
-    if obj.__name__ == "<unnamed Boost.Python function>" or obj.__name__.startswith('__'): #filter out descriptors
-        return
-    if (obj.__name__ == ("type")) or (obj.__name__ == ("class")): #filter out non-subclass type types 
-        return
-    print_obj_info(descr, obj)
-    if inspect.ismethod(obj) or inspect.isbuiltin(obj): #go no further for these objects
-        LINE.pop()
-        return
-    else:
-        try: 
-            members = inspect.getmembers(obj)
-            for (name, member) in members:
-                if inspect.isbuiltin(member):                    
-                    describe_obj("Built-In", member)
-            for (name, member) in members:
-                if str(type(member)) == "<type 'property'>":
-                    print_obj_info("Property", member, name)
-                    LINE.pop()
-            for (name, member) in members:
-                if inspect.ismethod(member):
-                    describe_obj("Method", member)                    
-            for (name, member) in members:
-                if (str(type(member)).startswith( "<class" )):
-                    print_obj_info("Value", member, name)
-                    LINE.pop()
-            for (name, member) in members:
-                if str(type(member)) == "<type 'object'>" or (str(type(member)) == "<type 'type'>" and not repr(obj).startswith("<class '")): #filter out unwanted types
-                    continue
-                if inspect.isclass(member) and str(type(member)) == "<type 'type'>":
-                    describe_obj("Sub-Class", member)   
-            for (name, member) in members:
-                if str(type(member)) == "<type 'object'>" or (str(type(member)) == "<type 'type'>" and not repr(obj).startswith("<class '")): #filter out unwanted types
-                    continue
-                if inspect.isclass(member) and not str(type(member)) == "<type 'type'>":
-                    describe_obj("Class", member)
-            LINE.pop()
-        except: 
-            return
-
-
-def describe_module(module):
-    """ Describe the module object passed as argument
-    including its root classes and functions """
-
-    print_obj_info("Module", module)
-
-    for name in dir(module): #do the built-ins first
-        obj = getattr(module, name)
-        if inspect.isbuiltin(obj):
-            describe_obj("Built-In", obj)
-
-    for name in dir(module): #then the rest
-        obj = getattr(module, name)            
-        if inspect.isclass(obj):
-            describe_obj("Class", obj)
-        elif (inspect.ismethod(obj) or inspect.isfunction(obj)):
-            describe_obj("Method", obj)
-        elif inspect.ismodule(obj):
-            describe_module(obj)
-    LINE.pop()            
-            
-            
-LINE = []
-            
-header = """Unofficial Live API documentation generated by the "API_MakeDoc" MIDI Remote Script.   
-            <requirement xmlns:html="http://www.w3.org/1999/xhtml">
-            <html:a href="http://remotescripts.blogspot.com">http://remotescripts.blogspot.com</html:a></requirement>
-            """
-disclaimer  = """This is unofficial documentation. Please do not contact Ableton with questions or problems relating to the use of this documentation."""
-
-css = """/* Style Sheet for formatting XML output of Live API Inspector */
-    Live
-    {
-    background: #f8f8f8;
-    display: block;
-    margin-bottom: 10px;
-    margin-left: 20px;
-    margin-top: 10px;
-    padding: 4px;
-    font-family: "Lucida Sans Unicode", "Lucida Sans", "Lucida Grande", Verdana, sans-serif;
-    font-weight: bold;
-    color: #000000;
-    font-size: 10pt;
-    } 
-
-    Module, Class, Sub-Class
-    {
-    display: block;
-    margin-bottom: 5px;
-    margin-top: 10px;
-    margin-left: -5px;
-    padding-left: 5px;
-    padding-top: 4px;
-    padding-bottom: 4px;
-    background: silver;
-    font-size: 12pt;
-    background-color: #DDD;
-    border: solid 1px #AAA;
-    color: #333;
-    }
-
-    Module
-    {
-    display: block;
-    color: #000;
-    background-color: #CCC;
-    }
-
-    Description
-    {
-    display: inline;
-    margin-left: 5px;
-    color: #000000;
-    font-family: Arial, Helvetica, sans-serif;
-    font-style: italic;
-    font-weight: normal;
-    font-size: 9pt;
-    }
-
-    Doc
-    {
-    display: block;
-    color: #408080;
-    margin-left: 20pt;
-    font-family: Arial, Helvetica, sans-serif;
-    font-style: italic;
-    font-weight: normal;
-    font-size: 9pt;
-    }
-    Method 
-    {
-    display: block;
-    margin-top: 10px;
-    color: #000080;
-    }
-    Built-In 
-    {		
-    display: block;
-    margin-top: 10px;
-    color: #081798;
-    }
-    Property 
-    {
-    display: block;
-    margin-top: 10px;
-    color: #0000AF;
-    }
-    Value 
-    {
-    display: block;
-    margin-top: 10px;
-    color: #1C5A8D;
-    }
-    """
