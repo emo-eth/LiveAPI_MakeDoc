@@ -159,8 +159,7 @@ def introspect_function(func):
             'name': func.__name__,
             'doc': inspect.getdoc(func),
             'signature': get_function_signature(func),
-            'text_signature': get_text_signature(func),
-            'manual_signature': parse_docstring(func.__name__, inspect.getdoc(func) or ''),
+            'scraped_signature': parse_docstring(func.__name__, inspect.getdoc(func) or ''),
             
         }
     except Exception as e:
