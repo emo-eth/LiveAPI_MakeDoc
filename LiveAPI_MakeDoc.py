@@ -51,7 +51,7 @@ class Argument:
         if self.default is None:
             return f'{self.name}: {self.type}'
         else:
-            return f'{self.name}: {self.type} = {self.default}'
+            return f'{self.name}: {self.type}={self.default}'
 
 class FunctionSignature:
     name: str
@@ -66,11 +66,21 @@ class FunctionSignature:
     def __str__(self):
         return f'{self.name}({", ".join(str(x) for x in self.arguments)}) -> {self.return_type}'
 
-def parse_arg(arg: str) -> Argument:
-    '''Parses args in type)name format'''
-    dirty_type, name = arg.split(')')
-    typename = dirty_type[1:]
-    return Argument(name, typename)
+def parse_arg(arg_string):
+    arg_parts = arg_string.split('=')
+    arg_parts = [part.replace('[', '').strip() for part in arg_parts]
+
+    type_, name = arg_parts[0].split(')')
+    type_ = type_.replace('(', '').strip()
+    name = name.strip()
+
+    if len(arg_parts) > 1:
+        default = arg_parts[1]
+    else:
+        default = None
+
+    return Argument(name, type_, default)
+
 
 
 def parse_docstring(name:str, docstring: str):
