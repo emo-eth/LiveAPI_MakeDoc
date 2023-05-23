@@ -1,38 +1,13 @@
-# http://remotescripts.blogspot.com
-
 """
-Copyright (C) 2011 Hanz Petrov <hanz.petrov@gmail.com>
+Modified from (C) 2011 Hanz Petrov <hanz.petrov@gmail.com>
 MIDI Remote Script for generating Live API documentation,
-based on realtime inspection of the Live module.
-Writes two files to the userhome directory - Live.xml and Live.css.
-
-Inspired in part by the following Live API exploration modules:
-dumpXML by Nathan Ramella http://code.google.com/p/liveapi/source/browse/trunk/docs/Ableton+Live+API/makedocs
-and LiveAPIGen by Patrick Mueller http://muellerware.org
-
-Parts of the describe methods are based on "describe" by Anand, found at:
-http://code.activestate.com/recipes/553262-list-classes-methods-and-functions-in-a-module/
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
 import Live
-import os, sys, types
+import os
 from _Framework.ControlSurface import ControlSurface
 import json
 import inspect
-import pprint
 import logging
 import os
 from typing import Optional, List
@@ -52,6 +27,13 @@ class Argument:
             return f'{self.name}: {self.type}'
         else:
             return f'{self.name}: {self.type}={self.default}'
+    
+    def to_json(self):
+        return {
+            'name': self.name,
+            'type': self.type,
+            'default': self.default
+        }
 
 class FunctionSignature:
     name: str
@@ -66,6 +48,13 @@ class FunctionSignature:
     def __str__(self):
         return f'{self.name}({", ".join(str(x) for x in self.arguments)}) -> {self.return_type}'
 
+    def to_json(self):
+        return {
+            'name': self.name,
+            'arguments': [x.to_json() for x in self.arguments],
+            'return_type': self.return_type
+        }
+
 def parse_arg(arg_string):
     arg_parts = arg_string.split('=')
     arg_parts = [part.replace('[', '').strip() for part in arg_parts]
@@ -78,6 +67,9 @@ def parse_arg(arg_string):
         default = arg_parts[1]
     else:
         default = None
+
+    if type_ == 'object':
+        type_ = 'Any'
 
     return Argument(name, type_, default)
 
@@ -94,7 +86,7 @@ def parse_docstring(name:str, docstring: str):
         args_string = name_with_args.split('( ')[1][:-1]   
         # get individual non-optional args
         args = [parse_arg(x) for x in args_string.split(', ')]
-        return str(FunctionSignature(name, args, return_type))
+        return FunctionSignature(name, args, return_type).to_json()
     except Exception as e:
         logger.exception('Failed to parse docstring for %s', name)
         return '<no signature available>'
@@ -169,9 +161,6 @@ def introspect_function(func):
 def introspect_class(cls):
     logger.debug('Introspecting class: %s', cls.__name__)
     try:
-        methods = {name: introspect_function(method) 
-                    for name, method in cls.__dict__.items() 
-                    if inspect.isroutine(method)}
         return {
             'name': cls.__name__,
             'doc': inspect.getdoc(cls),
@@ -182,8 +171,7 @@ def introspect_class(cls):
         raise e
 
 
-
-class APIMakeDoc(ControlSurface):
+class AAPIStub(ControlSurface):
 
     def __init__(self, c_instance):
         ControlSurface.__init__(self, c_instance) 
@@ -191,22 +179,9 @@ class APIMakeDoc(ControlSurface):
         
         outfilename = (str(module.__name__) + ".json")
         outfilename = (os.path.join(os.path.expanduser('~'), outfilename))
-        # make_doc(module, outfilename)
         with open(outfilename, 'w') as f:
             f.write(json.dumps(introspect_module(module),indent=2))
 
 
     def disconnect(self):
         ControlSurface.disconnect(self)
-
-
-# def make_doc(module, outfilename):
-#     if outfilename != None:
-#         stdout_old = sys.stdout
-
-#         outputfile = open(outfilename, 'w')
-#         sys.stdout = outputfile
-#         print(generate_stub(module, 'Live'))
-#         outputfile.close()
-#         sys.stdout = stdout_old
-            
