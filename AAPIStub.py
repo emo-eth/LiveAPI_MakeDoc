@@ -161,11 +161,37 @@ def introspect_function(func):
 def introspect_class(cls):
     logger.debug('Introspecting class: %s', cls.__name__)
     try:
-        return {
+        class_info =  {
             'name': cls.__name__,
             'doc': inspect.getdoc(cls),
-            'methods': {name: introspect_function(method) for name, method in inspect.getmembers(cls, inspect.isroutine) if not name.startswith('__')},
+            'methods': {},
+            'properties': {},
+            'fields': {},
+            'superclasses': [base.__name__ for base in cls.__bases__ if base.__name__ != 'instance'],
+            'enum': None
         }
+        if 'enum' in class_info['superclasses']:
+            enums = sorted(zip(cls.names, cls.values), key=lambda x: x[1])
+            class_info['enum'] = {k:v for k,v in enums}
+        super_attrs = set()
+        for base in cls.__bases__:
+            for attr in base.__dict__:
+                super_attrs.add(attr)
+        logger.info('super_attrs: %s', super_attrs)
+
+
+        # name: introspect_function(method) for name, method in inspect.getmembers(cls, inspect.isroutine) if not name.startswith('__')
+        for name, obj in inspect.getmembers(cls):
+            if name in super_attrs:
+                continue
+            if inspect.isroutine(obj) and not name.startswith('__'):
+                class_info['methods'][name] = introspect_function(obj)
+            elif inspect.isdatadescriptor(obj) and not name.startswith('__'):
+                class_info['properties'][name] = obj.__doc__
+            elif not (name.startswith('__') and name.endswith('__')):  # Exclude special methods
+                class_info['fields'][name] = type(obj).__name__
+
+        return class_info
     except Exception as e:
         logger.exception('Failed to introspect class: %s', cls.__name__)
         raise e
