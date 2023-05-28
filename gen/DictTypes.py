@@ -24,6 +24,11 @@ class BaseDict(TypedDict):
     type: Union[Literal["function"], Literal["class"], Literal["module"]]
 
 
+class Property(BaseDict):
+    has_setter: bool
+    has_deleter: bool
+
+
 class Function(BaseDict):
     signature: str
     scraped_signature: FunctionSignature
@@ -31,7 +36,7 @@ class Function(BaseDict):
 
 class Class(BaseDict):
     methods: dict[Name, Function]
-    properties: dict[Name, Docstring]
+    properties: dict[Name, Property]
     fields: dict[Name, Type]
     superclasses: list[Name]
     enum: Optional[list[EnumVal]]

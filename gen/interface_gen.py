@@ -1,6 +1,7 @@
 from typing import TypedDict, Optional, Literal, Union, Tuple, cast
 from gen.DictTypes import *
 import json
+import io
 
 INDENT = "    "
 ANY = "from typing import Any"
@@ -28,21 +29,38 @@ def generate_function_pyi(function: Function, class_context: bool) -> str:
     return_type = function["scraped_signature"]["return_type"]
 
     return indent(
-        f"""
+        f'''
 def {function['name']}({arguments}) -> {return_type}:
-    '''{function['doc']}'''
-    ...""",
+    """{function['doc']}"""
+    ...''',
         level=1 if class_context else 0,
     )
 
 
-def generate_property(name: str, docstring: str) -> str:
-    return f"""
+def generate_property(prop: Property) -> str:
+    name = prop["name"]
+    docstring = prop["doc"]
+    has_setter = prop["has_setter"]
+    has_deleter = prop["has_deleter"]
+    base = f'''
 @property
 def {name}(self):
-    '''{docstring}'''
+    """{docstring}"""
+    ...
+'''
+    if has_setter:
+        base += f"""
+@{name}.setter
+def {name}(self, value):
     ...
 """
+    if has_deleter:
+        base += f"""
+@{name}.deleter
+def {name}(self):
+    ...
+"""
+    return base
 
 
 def generate_class_pyi(class_obj: Class) -> str:
@@ -54,8 +72,8 @@ def generate_class_pyi(class_obj: Class) -> str:
     )
 
     properties = "\n".join(
-        indent(generate_property(prop_name, prop_type))
-        for prop_name, prop_type in class_obj["properties"].items()
+        indent(generate_property(prop))
+        for name, prop in class_obj["properties"].items()
     )
 
     fields = "\n".join(
@@ -115,14 +133,14 @@ def generate_module_pyi(module: Module) -> str:
     for module in modules:
         process_module(module)
 
-    pyi_contents = f"""'''{docstring}'''
+    pyi_contents = f'''"""{docstring}"""
 
 {imports}
 
 {classes}
 
 {functions}
-"""
+'''
 
     return pyi_contents
 
