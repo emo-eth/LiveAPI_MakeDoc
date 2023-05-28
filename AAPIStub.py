@@ -84,6 +84,7 @@ def parse_docstring(name: str, docstring: str):
         args_string = name_with_args.split("( ")[1][:-1]
         # get individual non-optional args
         args = [parse_arg(x) for x in args_string.split(", ")]
+        args[0].name = "self"
         return FunctionSignature(name, args, return_type).to_json()
     except Exception as e:
         logger.exception("Failed to parse docstring for %s", name)
