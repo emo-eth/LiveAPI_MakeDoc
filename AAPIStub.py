@@ -63,7 +63,7 @@ def parse_arg(arg_string):
     name = name.strip()
 
     if len(arg_parts) > 1:
-        default = arg_parts[1]
+        default = arg_parts[1].replace("]", "").strip()
     else:
         default = None
 
@@ -167,6 +167,21 @@ def introspect_function(func):
         raise
 
 
+def introspect_property(name: str, prop):
+    logger.debug("Introspecting property: %s", name)
+    try:
+        return {
+            "name": name,
+            "doc": inspect.getdoc(prop),
+            "type": "property",
+            "has_setter": hasattr(prop, "fset"),
+            "has_deleter": hasattr(prop, "fdel"),
+        }
+    except Exception as e:
+        logger.exception("Failed to introspect property: %s", prop.__name__)
+        raise
+
+
 def introspect_class(cls):
     logger.debug("Introspecting class: %s", cls.__name__)
     try:
@@ -200,7 +215,7 @@ def introspect_class(cls):
             if inspect.isroutine(obj) and not name.startswith("__"):
                 class_info["methods"][name] = introspect_function(obj)
             elif inspect.isdatadescriptor(obj) and not name.startswith("__"):
-                class_info["properties"][name] = obj.__doc__
+                class_info["properties"][name] = introspect_property(name, obj)
             elif not (
                 name.startswith("__") and name.endswith("__")
             ):  # Exclude special methods
@@ -222,6 +237,11 @@ class AAPIStub(ControlSurface):
         outfilename = str(module.__name__) + ".json"
         outfilename = os.path.join(os.path.expanduser("~"), outfilename)
         with open(outfilename, "w") as f:
+            f.write(json.dumps(introspect_module(module), indent=2))
+
+        # Save to script directory
+        script_dir_filename = os.path.join(os.path.dirname(__file__), outfilename)
+        with open(script_dir_filename, "w") as f:
             f.write(json.dumps(introspect_module(module), indent=2))
 
     def disconnect(self):
