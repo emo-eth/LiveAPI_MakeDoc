@@ -6,6 +6,43 @@ import file_helpers
 INDENT = "    "
 ANY = "from typing import Any"
 
+hierarchy_class_lookups: dict[str, list[str]] = {}
+
+
+def preprocess_classes(module: Module, hierarchy: list[str] = []) -> None:
+    classes = [x for x in module["members"].values() if x["type"] == "class"]
+    for class_ in classes:
+        hierarchy_class_lookups[class_["name"]] = hierarchy
+    modules = [x for x in module["members"].values() if x["type"] == "module"]
+    for module_ in modules:
+        preprocess_classes(cast(Module, module_), hierarchy + [module_["name"]])
+
+
+def generate_imports(names: list[str]) -> str:
+    names = sanitize_importable_types(names)
+    imports = []
+    for name in names:
+        hierarchy = hierarchy_class_lookups[name]
+        imports.append(f'from Live.{".".join(hierarchy)} import {name}')
+    return "\n" + "\n".join(imports)
+
+
+def generate_imports_from_functions(class_name: str, functions: list[Function]) -> str:
+    names = []
+    for function in functions:
+        if isinstance(function["scraped_signature"], str):
+            continue
+        for arg in function["scraped_signature"]["arguments"]:
+            names.append(arg["type"])
+        names.append(function["scraped_signature"]["return_type"])
+
+    sanitized_names = sanitize_importable_types(names)
+    return generate_imports(sanitized_names)
+
+
+def sanitize_importable_types(names: list[str]) -> list[str]:
+    return list(set(name for name in names if name in hierarchy_class_lookups))
+
 
 def indent(text: str, level: int = 1) -> str:
     return "\n".join(INDENT * level + line for line in text.split("\n"))
@@ -20,6 +57,7 @@ def arg_to_pyi(arg: Argument) -> str:
 
 
 def generate_function_pyi(function: Function, class_context: bool) -> str:
+    # TODO: will need to "quote" the arg type if it is the class being defined
     scraped_signature = function["scraped_signature"]
     if isinstance(scraped_signature, str):
         return ""
@@ -66,6 +104,10 @@ def generate_class_pyi(class_obj: Class) -> str:
     class_name = class_obj["name"]
     base_classes = ", ".join(class_obj["superclasses"])
     imports = "\n".join(["import enum", ANY, "from LomObject import LomObject"])
+    imports += generate_imports_from_functions(
+        class_name, cast(list[Function], class_obj["methods"].values())
+    )
+    imports += generate_imports(class_obj["superclasses"])
 
     methods = "\n".join(
         generate_function_pyi(method, True) for method in class_obj["methods"].values()
@@ -159,60 +201,12 @@ def generate_module_pyi(module: Module, hierarchy: list[str] = []) -> str:
     return pyi_contents
 
 
-# Example usage:
-json_data = {
-    "name": "my_module",
-    "doc": "This is my module.",
-    "type": "module",
-    "members": {
-        "MyClass": {
-            "name": "MyClass",
-            "doc": "This is my class.",
-            "type": "class",
-            "methods": {
-                "method1": {
-                    "name": "method1",
-                    "signature": "def method1(self, arg1: int, arg2: str) -> None",
-                    "scraped_signature": {
-                        "name": "method1",
-                        "arguments": [
-                            {"name": "self", "type": "MyClass"},
-                            {"name": "arg1", "type": "int"},
-                            {"name": "arg2", "type": "str"},
-                        ],
-                        "return_type": "None",
-                    },
-                }
-            },
-            "properties": {
-                "prop1": "This is property 1.",
-                "prop2": "This is property 2.",
-            },
-            "fields": {"field1": "str", "field2": "int"},
-            "superclasses": ["object"],
-            "enum": None,
-        },
-        "my_function": {
-            "name": "my_function",
-            "doc": "This is my function.",
-            "type": "function",
-            "signature": "def my_function(arg: int) -> str",
-            "scraped_signature": {
-                "name": "my_function",
-                "arguments": [{"name": "arg", "type": "int"}],
-                "return_type": "str",
-            },
-        },
-    },
-}
-
-
 def process_class(class_obj: Class, hierarchy: list[str] = []) -> None:
     print("class hierarchy:", hierarchy)
 
     pyi_contents = generate_class_pyi(class_obj)
     subpath = "/".join(hierarchy)
-    path = f"out/{subpath}"
+    path = f"Live/{subpath}"
     fname = f'{class_obj["name"]}.pyi'
     file_helpers.create_file(path, fname)
     with open(f"{path}/{fname}", "w") as file:
@@ -223,14 +217,19 @@ def process_module(module: Module, hierarchy: list[str] = []) -> None:
     print("module hierarchy:", hierarchy)
     pyi_contents = generate_module_pyi(module, hierarchy)
     subpath = "/".join(hierarchy)
-    path = f"out/{subpath}"
+    path = f"Live/{subpath}"
     fname = f"__init__.pyi"
     file_helpers.create_file(path, fname)
     with open(f"{path}/{fname}", "w") as file:
         file.write(pyi_contents)
 
 
+def process(module: Module) -> None:
+    preprocess_classes(module)
+    process_module(module)
+
+
 with open("Live.json", "r") as file:
     json_data = json.load(file)
 
-process_module(json_data)
+process(json_data)

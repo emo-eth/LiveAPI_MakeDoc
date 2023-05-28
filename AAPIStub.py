@@ -241,7 +241,9 @@ class AAPIStub(ControlSurface):
             f.write(json.dumps(introspect_module(module), indent=2))
 
         # Save to script directory
-        script_dir_filename = os.path.join(os.path.dirname(__file__), outfilename)
+        script_dir_filename = os.path.join(
+            os.path.expanduser("~"), "dev", "AAPIStub", outfilename
+        )
         with open(script_dir_filename, "w") as f:
             f.write(json.dumps(introspect_module(module), indent=2))
 
