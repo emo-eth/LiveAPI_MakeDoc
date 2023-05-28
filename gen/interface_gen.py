@@ -206,7 +206,7 @@ def process_class(class_obj: Class, hierarchy: list[str] = []) -> None:
 
     pyi_contents = generate_class_pyi(class_obj)
     subpath = "/".join(hierarchy)
-    path = f"Live/{subpath}"
+    path = f"out/{subpath}"
     fname = f'{class_obj["name"]}.pyi'
     file_helpers.create_file(path, fname)
     with open(f"{path}/{fname}", "w") as file:
@@ -217,7 +217,7 @@ def process_module(module: Module, hierarchy: list[str] = []) -> None:
     print("module hierarchy:", hierarchy)
     pyi_contents = generate_module_pyi(module, hierarchy)
     subpath = "/".join(hierarchy)
-    path = f"Live/{subpath}"
+    path = f"out/{subpath}"
     fname = f"__init__.pyi"
     file_helpers.create_file(path, fname)
     with open(f"{path}/{fname}", "w") as file:
