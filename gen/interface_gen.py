@@ -1,7 +1,7 @@
 from typing import TypedDict, Optional, Literal, Union, Tuple, cast
 from gen.DictTypes import *
 import json
-import io
+import file_helpers
 
 INDENT = "    "
 ANY = "from typing import Any"
@@ -23,7 +23,6 @@ def generate_function_pyi(function: Function, class_context: bool) -> str:
     scraped_signature = function["scraped_signature"]
     if isinstance(scraped_signature, str):
         return ""
-    print(function, scraped_signature)
 
     arguments = ", ".join(arg_to_pyi(arg) for arg in scraped_signature["arguments"])
     return_type = function["scraped_signature"]["return_type"]
@@ -66,6 +65,7 @@ def {name}(self):
 def generate_class_pyi(class_obj: Class) -> str:
     class_name = class_obj["name"]
     base_classes = ", ".join(class_obj["superclasses"])
+    imports = "\n".join(["import enum", ANY, "from LomObject import LomObject"])
 
     methods = "\n".join(
         generate_function_pyi(method, True) for method in class_obj["methods"].values()
@@ -86,14 +86,24 @@ def generate_class_pyi(class_obj: Class) -> str:
         enum_values = "\n".join(
             indent(f"{name} = {value}") for name, value in class_obj["enum"]
         )
-        class_def = f"""
+        class_def = f'''
+
+{imports}
+
 class {class_name}(enum.Enum):
+    """{class_obj["doc"]}"""
+
 {enum_values}
-"""
+'''
     else:
-        class_def = f"""class {class_name}({base_classes}):
+        class_def = f'''
+{imports}
+
+class {class_name}({base_classes}):
+    """{class_obj["doc"]}"""
+    
 {fields}
-"""
+'''
 
     pyi_contents = f"""
 {class_def}
@@ -101,19 +111,19 @@ class {class_name}(enum.Enum):
 {properties}
 
 {methods}
+    pass
 """
 
     return pyi_contents
 
 
-def generate_module_pyi(module: Module) -> str:
+def generate_module_pyi(module: Module, hierarchy: list[str] = []) -> str:
     docstring = module["doc"]
     members = module["members"]
 
     # imports = "\n".join(
     #     f"from {module_name} import {member['name']}" for member in members.values()
     # )
-    imports = "\n".join(["import enum", ANY, "from LomObject import LomObject"])
 
     classes = "\n\n".join(
         generate_class_pyi(cast(Class, class_obj))
@@ -131,13 +141,17 @@ def generate_module_pyi(module: Module) -> str:
         cast(Module, x) for x in members.values() if x["type"] == "module"
     ]
     for module in modules:
-        process_module(module)
+        process_module(module, hierarchy + [module["name"]])
+
+    classes = [cast(Class, x) for x in members.values() if x["type"] == "class"]
+    for class_obj in classes:
+        process_class(class_obj, hierarchy)
+
+    imports = "\n".join(f"from .{c['name']} import {c['name']}" for c in classes)
 
     pyi_contents = f'''"""{docstring}"""
 
 {imports}
-
-{classes}
 
 {functions}
 '''
@@ -193,9 +207,26 @@ json_data = {
 }
 
 
-def process_module(module: Module) -> None:
-    pyi_contents = generate_module_pyi(module)
-    with open(f"out/{module['name']}.pyi", "w") as file:
+def process_class(class_obj: Class, hierarchy: list[str] = []) -> None:
+    print("class hierarchy:", hierarchy)
+
+    pyi_contents = generate_class_pyi(class_obj)
+    subpath = "/".join(hierarchy)
+    path = f"out/{subpath}"
+    fname = f'{class_obj["name"]}.pyi'
+    file_helpers.create_file(path, fname)
+    with open(f"{path}/{fname}", "w") as file:
+        file.write(pyi_contents)
+
+
+def process_module(module: Module, hierarchy: list[str] = []) -> None:
+    print("module hierarchy:", hierarchy)
+    pyi_contents = generate_module_pyi(module, hierarchy)
+    subpath = "/".join(hierarchy)
+    path = f"out/{subpath}"
+    fname = f"__init__.pyi"
+    file_helpers.create_file(path, fname)
+    with open(f"{path}/{fname}", "w") as file:
         file.write(pyi_contents)
 
 
