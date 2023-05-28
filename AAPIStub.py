@@ -184,7 +184,9 @@ def introspect_class(cls):
         }
         if "enum" in class_info["superclasses"]:
             enums = sorted(zip(cls.names, cls.values), key=lambda x: x[1])
-            class_info["enum"] = {k: v for k, v in enums}
+            class_info["enum"] = list(
+                sorted(((k, v) for k, v in enums), key=lambda x: x[1])
+            )
         super_attrs = set()
         for base in cls.__bases__:
             for attr in base.__dict__:
@@ -202,7 +204,9 @@ def introspect_class(cls):
             elif not (
                 name.startswith("__") and name.endswith("__")
             ):  # Exclude special methods
-                class_info["fields"][name] = type(obj).__name__
+                class_info["fields"][name] = (
+                    type(obj).__name__ if type(obj).__name__ != "class" else "type"
+                )
 
         return class_info
     except Exception as e:
