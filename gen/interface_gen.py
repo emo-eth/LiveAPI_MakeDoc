@@ -103,7 +103,7 @@ def {name}(self):
 def generate_class_pyi(class_obj: Class) -> str:
     class_name = class_obj["name"]
     base_classes = ", ".join(class_obj["superclasses"])
-    imports = "\n".join(["import enum", ANY, "from LomObject import LomObject"])
+    imports = "\n".join(["import enum", ANY])
     imports += generate_imports_from_functions(
         class_name, cast(list[Function], class_obj["methods"].values())
     )
